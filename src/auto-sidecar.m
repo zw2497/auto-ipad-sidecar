@@ -4,6 +4,8 @@
 #import <dlfcn.h>
 #import <IOKit/IOKitLib.h>
 #import <signal.h>
+#import <sys/file.h>
+#import <fcntl.h>
 #import "PrivateAPIs.h"
 #import "Config.h"
 #import "Policy.h"
@@ -302,10 +304,29 @@ static void displayChanged(__unused CGDirectDisplayID display,CGDisplayChangeSum
     });
 }
 
+static dispatch_source_t guiOwnerMonitor;
 static int watchUSB(void) {
+    // One owner per configuration, including CLI and GUI launches.
+    NSString *lockPath=[configurationPath.stringByDeletingLastPathComponent stringByAppendingPathComponent:@"watch.lock"];
+    int lockFD=open(lockPath.fileSystemRepresentation,O_CREAT|O_RDWR|O_CLOEXEC,0600);
+    if(lockFD<0||flock(lockFD,LOCK_EX|LOCK_NB)) {
+        if(lockFD>=0)close(lockFD);
+        NSLog(@"Another watcher already owns this configuration");return ASUnavailable;
+    }
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
     InitializePreferences();
+    // A GUI-owned watcher must not outlive a crashed GUI process.
+    NSString *owner=NSProcessInfo.processInfo.environment[@"AUTOSIDECAR_GUI_PARENT_PID"];
+    if(owner.length) {
+        pid_t pid=(pid_t)owner.intValue;
+        if(pid<=1||getppid()!=pid)return ASUnavailable;
+        guiOwnerMonitor=dispatch_source_create(DISPATCH_SOURCE_TYPE_PROC,(uintptr_t)pid,DISPATCH_PROC_EXIT,dispatch_get_main_queue());
+        if(!guiOwnerMonitor)return ASUnavailable;
+        dispatch_source_set_event_handler(guiOwnerMonitor,^{kill(getpid(),SIGTERM);});
+        dispatch_resume(guiOwnerMonitor);
+        if(getppid()!=pid)kill(getpid(),SIGTERM);
+    }
     NSNotificationCenter *workspaceCenter=NSWorkspace.sharedWorkspace.notificationCenter;
     NSArray *powerObservers=ObservePowerEvents(workspaceCenter);
     previousOtherDisplays=otherDisplayIDs();
@@ -901,6 +922,18 @@ int main(int argc,const char **argv) {
             if (!manager)return ASUnavailable;
             for (id d in [manager devices])printf("Sidecar: %s — %s\n",[[d name] UTF8String],[[[d identifier] description] UTF8String]);
             return ASOK;
+        }
+        if ([action isEqual:@"devices-json"]) {
+            alarm(ASWorkerTimeout);
+            id manager=DiscoveryManager();
+            if(!manager)return ASUnavailable;
+            NSMutableArray *targets=[NSMutableArray array];
+            for(id d in [manager devices]) [targets addObject:@{
+                @"name":[d name]?:@"iPad",@"identifier":[[d identifier] description],@"model":[d model]?:@""
+            }];
+            NSData *data=[NSJSONSerialization dataWithJSONObject:@{@"usb":USBDevices(),@"sidecar":targets} options:0 error:NULL];
+            if(!data)return ASUnavailable;
+            fwrite(data.bytes,1,data.length,stdout);return ASOK;
         }
         if ([action isEqual:@"setup"])return Setup();
         if ([action isEqual:@"configure"])return Configure();

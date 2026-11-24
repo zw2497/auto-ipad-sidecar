@@ -117,3 +117,51 @@ No third-party package or helper executable is bundled.
   SidecarCore API reference.
 - [Fuzzy-Team/virtual-monitor-helper](https://github.com/Fuzzy-Team/virtual-monitor-helper):
   virtual-display API declaration reference.
+
+## Minimal macOS app (SwiftUI)
+
+Build the menu-bar app and drag-to-install disk image (macOS 13+, Xcode Swift toolchain):
+
+```sh
+./scripts/build-app.sh --dmg
+```
+
+Open `dist/AutoSidecar.dmg`, drag **AutoSidecar** into **Applications**, then open it.
+The menu shows the actual owned watcher process and the system login-item status.
+Settings provide device enrollment, backing-pixel dimensions, HiDPI, display layout,
+and optional Dock profiles and refresh rate. Refresh rates above 60 Hz are experimental;
+a configured virtual-display rate does not prove Sidecar's delivered frame rate.
+
+The app bundles the existing Objective-C CLI. It owns one `watch` child process;
+closing Settings keeps it alive, while **Quit AutoSidecar** disconnects the current
+Sidecar session, stops the watcher, restores optional Dock overrides, and releases
+its virtual display. An iPad-only desktop requires confirmation before quitting.
+The login-item preference is retained when quitting. Login startup uses Apple's
+`SMAppService.mainApp`, and any pending approval is shown in Settings.
+
+On first normal launch, an installed legacy `local.auto-sidecar` LaunchAgent is
+unloaded and its plist backed up under Application Support. The app then registers
+itself for login if that legacy plist existed. This ownership transfer can briefly
+interrupt an existing headless session. CLI commands remain available, but do not
+run the legacy `install` command while using the GUI; it would restore the old
+LaunchAgent. New CLI watchers use an exclusive per-config lock to prevent duplication.
+
+Pairing tests use a temporary configuration without replacing the saved pairing.
+Select the USB iPad and matching Sidecar target, test, then confirm the actual screen.
+Saving a new pairing briefly recreates the service. Cancelling restores the saved
+service. Logs are in `~/Library/Logs/AutoSidecar/gui-service.log`.
+
+For development without touching pairing, devices, or login items:
+
+```sh
+dist/AutoSidecar.app/Contents/MacOS/AutoSidecar --preview
+dist/AutoSidecar.app/Contents/MacOS/AutoSidecar --self-test
+dist/AutoSidecar.app/Contents/MacOS/AutoSidecar --render-preview /tmp/settings.png
+```
+
+The self-test checks configuration preservation against the real core and service
+lifecycle against a fake executable. Real USB enrollment, Sidecar, Dock Automation,
+and login after reboot require hardware/system testing; preview mode does not prove
+them. Build output is ad-hoc signed by default for local development, not notarized.
+Use `CODESIGN_IDENTITY='Developer ID Application: …' ./scripts/build-app.sh --dmg`
+with your own identity for signed builds; notarization is a separate distribution step.

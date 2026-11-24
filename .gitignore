@@ -3,3 +3,5 @@
 *.dSYM/
 .DS_Store
 config.plist
+
+/dist/
