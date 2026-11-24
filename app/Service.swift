@@ -3,6 +3,12 @@ import SwiftUI
 import ServiceManagement
 import Darwin
 
+// Bundle localization follows the macOS preferred app language; unsupported languages fall back to English.
+func L(_ key: String) -> String { NSLocalizedString(key, comment: "") }
+func LF(_ key: String, _ arguments: CVarArg...) -> String {
+    String(format: L(key), locale: Locale.current, arguments: arguments)
+}
+
 struct CommandResult {
     let code: Int32
     let output: String
@@ -74,7 +80,7 @@ struct Preferences {
 
     func applying(to source: [String: Any]) throws -> [String: Any] {
         guard let w = Int(width), let h = Int(height), let rate = Double(hz), rate.isFinite else {
-            throw AppError(message: "请输入有效的分辨率和刷新率。")
+            throw AppError(message: L("Enter a valid resolution and refresh rate."))
         }
         var config = source
         config["display"] = ["width": w, "height": h, "refreshRate": rate, "hiDPI": hiDPI]
@@ -82,13 +88,13 @@ struct Preferences {
         func profile(_ size: String, _ magnification: String) throws -> [String: Any] {
             var result: [String: Any] = [:]
             if !size.isEmpty {
-                guard let n = Int(size), (16...128).contains(n) else { throw AppError(message: "Dock 大小需为 16–128，留空表示不接管。") }
+                guard let n = Int(size), (16...128).contains(n) else { throw AppError(message: L("Dock size must be 16–128. Leave blank to keep system settings.")) }
                 result["size"] = n
             }
             if !magnification.isEmpty {
                 if magnification.lowercased() == "off" { result["magnification"] = false }
                 else {
-                    guard let n = Int(magnification), (16...128).contains(n) else { throw AppError(message: "Dock 放大尺寸需为 16–128；off 表示关闭，留空表示不接管。") }
+                    guard let n = Int(magnification), (16...128).contains(n) else { throw AppError(message: L("Dock magnification must be 16–128, off, or blank to keep system settings.")) }
                     result["magnification"] = n
                 }
             }
@@ -113,9 +119,9 @@ final class ServiceModel: ObservableObject {
     let core: URL
     var configURL: URL { base.appendingPathComponent("config.plist") }
     var legacyPlist: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/LaunchAgents/local.auto-sidecar.plist") }
-    @Published var serviceText = "自动连接服务未运行"
+    @Published var serviceText = L("Auto-connect service is not running")
     @Published var running = false
-    @Published var loginText = "正在检查登录启动…"
+    @Published var loginText = L("Checking login startup…")
     @Published var loginEnabled = false
     @Published var needsLoginApproval = false
     @Published var busy = false
@@ -139,11 +145,11 @@ final class ServiceModel: ObservableObject {
         logsURL = testBase != nil ? base.appendingPathComponent("Logs") : FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/AutoSidecar")
         core = executable ?? Bundle.main.url(forResource: "auto-sidecar", withExtension: nil)!
         if previewMode {
-            config = ["version": 1, "name": "我的 iPad", "usbSerial": "preview", "sidecarIdentifier": "preview",
+            config = ["version": 1, "name": L("My iPad"), "usbSerial": "preview", "sidecarIdentifier": "preview",
                       "display": ["width": 2628, "height": 1970, "refreshRate": 60, "hiDPI": true], "withOtherDisplays": "extend"]
-            running = true; serviceText = "自动连接服务运行中"
-            loginEnabled = true; loginText = "登录后自动启动已开启"
-            if CommandLine.arguments.contains("--preview-message") { message = "设置已保存。分辨率、HiDPI 和刷新率将在下次连接时生效。" }
+            running = true; serviceText = L("Auto-connect service is running")
+            loginEnabled = true; loginText = L("Launch at login is enabled")
+            if CommandLine.arguments.contains("--preview-message") { message = L("Settings saved. Resolution, HiDPI, and refresh rate apply on the next connection.") }
         } else { load(); refreshLogin() }
     }
 
@@ -151,7 +157,7 @@ final class ServiceModel: ObservableObject {
         do {
             guard FileManager.default.fileExists(atPath: configURL.path) else { return }
             config = try PropertyListSerialization.propertyList(from: Data(contentsOf: configURL), format: nil) as? [String: Any] ?? [:]
-        } catch { message = "无法读取配置：\(error.localizedDescription)" }
+        } catch { message = LF("Could not read settings: %@", error.localizedDescription) }
     }
 
     func refreshLogin() {
@@ -160,10 +166,10 @@ final class ServiceModel: ObservableObject {
         loginEnabled = status == .enabled
         needsLoginApproval = status == .requiresApproval
         switch status {
-        case .enabled: loginText = "登录后自动启动已开启"
-        case .requiresApproval: loginText = "登录启动等待系统批准"
-        case .notRegistered: loginText = "登录后自动启动未开启"
-        default: loginText = "登录启动不可用"
+        case .enabled: loginText = L("Launch at login is enabled")
+        case .requiresApproval: loginText = L("Login startup needs approval")
+        case .notRegistered: loginText = L("Launch at login is disabled")
+        default: loginText = L("Login startup is unavailable")
         }
     }
 
@@ -173,12 +179,12 @@ final class ServiceModel: ObservableObject {
         do {
             if enabled { try SMAppService.mainApp.register() }
             else { try await SMAppService.mainApp.unregister() }
-        } catch { message = "无法修改登录启动：\(error.localizedDescription)\n请先将应用放入 Applications 文件夹。" }
+        } catch { message = LF("Could not update login startup: %@\nMove AutoSidecar to Applications first.", error.localizedDescription) }
     }
 
     func checked(_ args: [String]) async throws -> String {
         let result = try await command(core, args)
-        guard result.code == 0 else { throw AppError(message: result.output.isEmpty ? "操作失败（\(result.code)），请查看日志。" : result.output) }
+        guard result.code == 0 else { throw AppError(message: result.output.isEmpty ? LF("Operation failed (%d). Check the logs.", result.code) : result.output) }
         return result.output
     }
 
@@ -198,18 +204,18 @@ final class ServiceModel: ObservableObject {
                     if state.code != 0 { gone = true; break }
                     try await Task.sleep(nanoseconds: 250_000_000)
                 }
-                if !gone { throw AppError(message: "旧后台服务尚未退出，请稍后重新打开应用。") }
+                if !gone { throw AppError(message: L("The previous service is still stopping. Reopen AutoSidecar shortly.")) }
             }
             if legacy {
                 try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
                 let backup = base.appendingPathComponent("legacy-launchagent-\(UUID().uuidString).plist")
                 try FileManager.default.moveItem(at: legacyPlist, to: backup)
                 do { try SMAppService.mainApp.register() }
-                catch { message = "已接管旧服务；请在设置中重新开启登录启动。\n\(error.localizedDescription)" }
+                catch { message = LF("The previous service was migrated. Enable login startup in Settings.\n%@", error.localizedDescription) }
             }
             refreshLogin()
             if !config.isEmpty { try await start(configURL) }
-        } catch { serviceText = "自动连接服务未运行"; message = error.localizedDescription }
+        } catch { serviceText = L("Auto-connect service is not running"); message = error.localizedDescription }
     }
 
     func start(_ url: URL) async throws {
@@ -232,13 +238,13 @@ final class ServiceModel: ObservableObject {
             DispatchQueue.main.async {
                 guard let self, self.watcher === child else { return }
                 self.running = false
-                if !self.stopping { self.serviceText = "自动连接服务意外停止"; self.message = "后台服务已停止，请查看日志后重试。" }
+                if !self.stopping { self.serviceText = L("Auto-connect service stopped unexpectedly"); self.message = L("The service stopped. Check the logs and try again.") }
             }
         }
         try process.run(); watcher = process; watcherConfig = url
         try await Task.sleep(nanoseconds: 500_000_000)
-        guard process.isRunning else { throw AppError(message: "后台服务启动失败。可能已有 CLI 实例运行，请查看日志。") }
-        running = true; serviceText = "自动连接服务运行中"
+        guard process.isRunning else { throw AppError(message: L("The service could not start. A CLI instance may already be running. Check the logs.")) }
+        running = true; serviceText = L("Auto-connect service is running")
     }
 
     // Keep the virtual display alive until Sidecar disconnect has completed.
@@ -257,14 +263,14 @@ final class ServiceModel: ObservableObject {
             if !process.isRunning { break }
             try await Task.sleep(nanoseconds: 250_000_000)
         }
-        guard !process.isRunning else { throw AppError(message: "后台服务仍在清理，尚未退出。请稍后重试。") }
+        guard !process.isRunning else { throw AppError(message: L("The service is still cleaning up. Try again shortly.")) }
         if let url = watcherConfig {
             let record = url.deletingLastPathComponent().appendingPathComponent("dock-restoration.plist")
             if FileManager.default.fileExists(atPath: record.path) {
                 _ = try await checked(["dock-restore", "--config", url.path])
             }
         }
-        watcher = nil; watcherConfig = nil; running = false; serviceText = "自动连接服务未运行"
+        watcher = nil; watcherConfig = nil; running = false; serviceText = L("Auto-connect service is not running")
     }
 
     func writeValidated(_ value: [String: Any], to url: URL) async throws {
@@ -272,7 +278,7 @@ final class ServiceModel: ObservableObject {
         let staging = url.deletingLastPathComponent().appendingPathComponent(".candidate-\(UUID().uuidString).plist")
         defer { try? FileManager.default.removeItem(at: staging) }
         let data = try PropertyListSerialization.data(fromPropertyList: value, format: .xml, options: 0)
-        guard FileManager.default.createFile(atPath: staging.path, contents: data, attributes: [.posixPermissions: 0o600]) else { throw AppError(message: "无法写入临时配置。") }
+        guard FileManager.default.createFile(atPath: staging.path, contents: data, attributes: [.posixPermissions: 0o600]) else { throw AppError(message: L("Could not write temporary settings.")) }
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: staging.path)
         _ = try await checked(["config", "validate", "--config", staging.path])
         try data.write(to: url, options: .atomic)
@@ -280,26 +286,26 @@ final class ServiceModel: ObservableObject {
     }
 
     func reloadOwned() async throws {
-        guard let watcher, watcher.isRunning, let url = watcherConfig else { throw AppError(message: "设置已保存，但后台未运行。") }
+        guard let watcher, watcher.isRunning, let url = watcherConfig else { throw AppError(message: L("Settings saved, but the service is not running.")) }
         let id = UUID().uuidString
         let dir = url.deletingLastPathComponent()
         let data = try PropertyListSerialization.data(fromPropertyList: ["id": id], format: .xml, options: 0)
         let request = dir.appendingPathComponent("reload-request.plist")
         try data.write(to: request, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: request.path)
-        guard kill(watcher.processIdentifier, SIGHUP) == 0 else { throw AppError(message: "设置已保存，但通知后台失败。") }
+        guard kill(watcher.processIdentifier, SIGHUP) == 0 else { throw AppError(message: L("Settings saved, but the service could not be notified.")) }
         for _ in 0..<60 {
             try await Task.sleep(nanoseconds: 100_000_000)
             if let reply = NSDictionary(contentsOf: dir.appendingPathComponent("reload-result.plist")), reply["id"] as? String == id {
-                guard reply["ok"] as? Bool == true else { throw AppError(message: reply["message"] as? String ?? "后台拒绝了设置。") }
+                guard reply["ok"] as? Bool == true else { throw AppError(message: reply["message"] as? String ?? L("The service rejected the settings.")) }
                 return
             }
         }
-        throw AppError(message: "设置已保存，但后台尚未确认加载，请查看日志。")
+        throw AppError(message: L("Settings saved, but the service has not confirmed loading them. Check the logs."))
     }
 
     func save(_ preferences: Preferences) async {
-        guard !previewMode else { message = "预览模式：没有保存或更改系统设置。"; return }
+        guard !previewMode else { message = L("Preview mode: no settings were saved or changed."); return }
         busy = true; defer { busy = false }
         do {
             let next = try preferences.applying(to: config)
@@ -307,21 +313,21 @@ final class ServiceModel: ObservableObject {
             config = next
             if watcher?.isRunning == true { try await reloadOwned() }
             else { try await start(configURL) }
-            message = "设置已保存。分辨率、HiDPI 和刷新率将在下次连接时生效。"
+            message = L("Settings saved. Resolution, HiDPI, and refresh rate apply on the next connection.")
         } catch { message = error.localizedDescription }
     }
 
     func discover() async {
         guard !previewMode else {
-            usb = [.init(id: "preview", name: "我的 iPad")]; targets = usb; return
+            usb = [.init(id: "preview", name: L("My iPad"))]; targets = usb; return
         }
         busy = true; defer { busy = false }
         do {
             let output = try await checked(["devices-json"])
-            guard let data = output.data(using: .utf8), let result = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw AppError(message: "无法读取设备列表。") }
+            guard let data = output.data(using: .utf8), let result = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw AppError(message: L("Could not read the device list.")) }
             usb = (result["usb"] as? [[String: String]] ?? []).compactMap { d in d["serial"].map { DeviceChoice(id: $0, name: d["name"] ?? "iPad") } }
             targets = (result["sidecar"] as? [[String: String]] ?? []).compactMap { d in d["identifier"].map { DeviceChoice(id: $0, name: d["name"] ?? "iPad") } }
-            if usb.isEmpty || targets.isEmpty { message = "请接入并解锁 iPad，完成系统信任操作，然后刷新设备。" }
+            if usb.isEmpty || targets.isEmpty { message = L("Connect and unlock your iPad, complete the system trust prompt, then refresh devices.") }
         } catch { message = error.localizedDescription }
     }
 
@@ -343,13 +349,13 @@ final class ServiceModel: ObservableObject {
                 try await Task.sleep(nanoseconds: 1_000_000_000)
                 let result = try await command(core, ["session-snapshot", "--config", url.path])
                 if let data = result.output.data(using: .utf8), let state = try? JSONSerialization.jsonObject(with: data) as? [String: Any], state["active"] as? Bool == true {
-                    tested = true; message = "请确认目标 iPad 已显示 Mac 桌面，再保存绑定。"; return
+                    tested = true; message = L("Confirm the Mac desktop is visible on the intended iPad before saving."); return
                 }
             }
-            throw AppError(message: "未能确认随航画面，请解锁 iPad 后重试。原来的绑定没有更改。")
+            throw AppError(message: L("Could not verify Sidecar. Unlock your iPad and retry. The saved pairing is unchanged."))
         } catch {
             let failure = error.localizedDescription
-            do { try await discardTrial() } catch { message = "\(failure)\n恢复原服务失败：\(error.localizedDescription)"; return }
+            do { try await discardTrial() } catch { message = LF("%@\nCould not restore the previous service: %@", failure, error.localizedDescription); return }
             message = failure
         }
     }
@@ -364,7 +370,7 @@ final class ServiceModel: ObservableObject {
             try await stop()
             cleanTrial()
             try await start(configURL)
-            message = "iPad 已绑定。以后插线即可自动连接。"
+            message = L("iPad paired. Connect it by USB to start Sidecar automatically.")
         } catch { message = error.localizedDescription }
     }
 
@@ -392,9 +398,9 @@ final class ServiceModel: ObservableObject {
            let data = output.data(using: .utf8), let state = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            state["active"] as? Bool == true, (state["otherCount"] as? Int) == 0 {
             let alert = NSAlert()
-            alert.messageText = "退出后，iPad 将停止显示 Mac 桌面"
-            alert.informativeText = "自动连接也会停止，直到重新打开 AutoSidecar。登录启动偏好会保留。"
-            alert.addButton(withTitle: "取消"); alert.addButton(withTitle: "退出 AutoSidecar")
+            alert.messageText = L("Quitting will stop showing the Mac desktop on your iPad")
+            alert.informativeText = L("Auto-connect will stop until you reopen AutoSidecar. Your login startup preference will be kept.")
+            alert.addButton(withTitle: L("Cancel")); alert.addButton(withTitle: L("Quit AutoSidecar"))
             NSApp.activate(ignoringOtherApps: true)
             if alert.runModal() != .alertSecondButtonReturn { return }
         }
@@ -403,6 +409,6 @@ final class ServiceModel: ObservableObject {
             cleanTrial()
             NSApp.reply(toApplicationShouldTerminate: true)
             exit(0)
-        } catch { message = "未能完整退出：\(error.localizedDescription)"; NSApp.reply(toApplicationShouldTerminate: false) }
+        } catch { message = LF("Could not finish quitting: %@", error.localizedDescription); NSApp.reply(toApplicationShouldTerminate: false) }
     }
 }

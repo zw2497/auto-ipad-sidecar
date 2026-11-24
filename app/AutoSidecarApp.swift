@@ -31,7 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             let image = NSImage(systemSymbolName: running ? "ipad.landscape" : "exclamationmark.circle", accessibilityDescription: "AutoSidecar")
             image?.isTemplate = true
             self?.statusItem?.button?.image = image
-            self?.statusItem?.button?.toolTip = "AutoSidecar — \(running ? "服务运行中" : "服务未运行")"
+            self?.statusItem?.button?.toolTip = "AutoSidecar — \(running ? L("Service running") : L("Service stopped"))"
         }
     }
 
@@ -52,14 +52,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             item.isEnabled = !Self.model.busy
             menu.addItem(item)
         }
-        if !Self.model.running && !Self.model.config.isEmpty { action("启动服务", #selector(startService)) }
+        if !Self.model.running && !Self.model.config.isEmpty { action(L("Start Service"), #selector(startService)) }
         if !Self.model.loginEnabled {
-            action(Self.model.needsLoginApproval ? "批准登录启动…" : "开启登录启动", #selector(enableLogin))
+            action(Self.model.needsLoginApproval ? L("Approve Login Startup…") : L("Enable Launch at Login"), #selector(enableLogin))
         }
         menu.addItem(.separator())
-        action("设置…", #selector(openSettings), key: ",")
+        action(L("Settings…"), #selector(openSettings), key: ",")
         menu.addItem(.separator())
-        action("退出 AutoSidecar", #selector(quitApp), key: "q")
+        action(L("Quit AutoSidecar"), #selector(quitApp), key: "q")
     }
 
     @objc private func startService() { Task { await Self.model.retry() } }
@@ -99,7 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         if window == nil {
             let controller = NSHostingController(rootView: SettingsView(model: Self.model))
             let w = NSWindow(contentViewController: controller)
-            w.title = "AutoSidecar 设置"
+            w.title = L("AutoSidecar Settings")
             w.styleMask = [.titled, .closable, .miniaturizable]
             w.setContentSize(NSSize(width: 510, height: 650))
             w.center(); w.delegate = self
@@ -149,65 +149,65 @@ struct SettingsView: View {
     var body: some View {
         VStack(spacing: 0) {
             Form {
-                Section("启动") {
-                    Toggle("登录 Mac 后自动启动", isOn: Binding(get: { model.loginEnabled }, set: { enabled in Task { await model.setLogin(enabled) } }))
+                Section(L("Startup")) {
+                    Toggle(L("Launch at login"), isOn: Binding(get: { model.loginEnabled }, set: { enabled in Task { await model.setLogin(enabled) } }))
                     if model.needsLoginApproval {
-                        Button("在系统设置中批准登录启动…") { SMAppService.openSystemSettingsLoginItems() }
+                        Button(L("Approve in System Settings…")) { SMAppService.openSystemSettingsLoginItems() }
                     }
-                    Text("登录后生效，不支持登录前或 FileVault 解锁界面。")
+                    Text(L("Starts after login. The login screen and FileVault unlock are not supported."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Section("自动连接的 iPad") {
+                Section(L("Paired iPad")) {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(model.config["name"] as? String ?? "尚未绑定")
-                            Text("插入这台 iPad 时，自动启动随航。")
+                            Text(model.config["name"] as? String ?? L("No iPad paired"))
+                            Text(L("Starts Sidecar when this iPad is connected by USB."))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Button(model.config.isEmpty ? "选择 iPad…" : "更换…") { model.message = ""; pairing = true }
+                        Button(model.config.isEmpty ? L("Choose iPad…") : L("Change…")) { model.message = ""; pairing = true }
                     }
                 }
-                Section("仅使用 iPad 时") {
+                Section(L("When iPad is the only display")) {
                     HStack {
-                        Text("桌面分辨率")
+                        Text(L("Desktop resolution"))
                         Spacer()
-                        TextField("宽", text: $draft.width).labelsHidden().textFieldStyle(.roundedBorder).frame(width: 70).accessibilityLabel("桌面宽度")
+                        TextField(L("Width"), text: $draft.width).labelsHidden().textFieldStyle(.roundedBorder).frame(width: 70).accessibilityLabel(L("Desktop width"))
                         Text("×").foregroundStyle(.secondary)
-                        TextField("高", text: $draft.height).labelsHidden().textFieldStyle(.roundedBorder).frame(width: 70).accessibilityLabel("桌面高度")
+                        TextField(L("Height"), text: $draft.height).labelsHidden().textFieldStyle(.roundedBorder).frame(width: 70).accessibilityLabel(L("Desktop height"))
                     }
-                    Toggle("HiDPI 高清显示", isOn: $draft.hiDPI)
-                    Text("尺寸为渲染像素；HiDPI 下桌面逻辑尺寸减半。\n分辨率、HiDPI 和刷新率将在下次连接时生效。")
+                    Toggle(L("HiDPI display"), isOn: $draft.hiDPI)
+                    Text(L("Dimensions are backing pixels. HiDPI halves the logical desktop size.\nDisplay changes apply on the next connection."))
                         .font(.caption).foregroundStyle(.secondary)
                 }.disabled(model.config.isEmpty)
-                Section("有其他显示器时") {
-                    Picker("iPad 显示方式", selection: $draft.layout) {
-                        Text("扩展显示器").tag("extend")
-                        Text("镜像主显示器").tag("mirror")
-                        Text("保留系统布局").tag("preserve")
+                Section(L("With other displays")) {
+                    Picker(L("Use iPad as"), selection: $draft.layout) {
+                        Text(L("Extended display")).tag("extend")
+                        Text(L("Mirror main display")).tag("mirror")
+                        Text(L("Keep system layout")).tag("preserve")
                     }
                 }.disabled(model.config.isEmpty)
-                DisclosureGroup("高级设置", isExpanded: $advanced) {
+                DisclosureGroup(L("Advanced"), isExpanded: $advanced) {
                     VStack(alignment: .leading, spacing: 18) {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                Text("虚拟屏幕刷新率")
+                                Text(L("Virtual display refresh rate"))
                                 Spacer()
                                 TextField("60", text: $draft.hz)
                                     .labelsHidden().textFieldStyle(.roundedBorder)
-                                    .frame(width: 72).accessibilityLabel("虚拟屏幕刷新率")
+                                    .frame(width: 72).accessibilityLabel(L("Virtual display refresh rate"))
                                 Text("Hz").foregroundStyle(.secondary)
                             }
-                            Text("24–120 Hz；高于 60 为实验性，不保证随航实际帧率。")
+                            Text(L("24–120 Hz. Above 60 is experimental and does not guarantee Sidecar frame rate."))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Divider()
-                        DockFields(title: "仅 iPad 的 Dock", size: $draft.ipadSize, magnification: $draft.ipadMagnification)
+                        DockFields(title: L("Dock with iPad only"), size: $draft.ipadSize, magnification: $draft.ipadMagnification)
                         Divider()
-                        DockFields(title: "有其他显示器的 Dock", size: $draft.otherSize, magnification: $draft.otherMagnification)
-                        Text("Dock 默认保持系统设置；启用自定义可能需要自动化权限。")
+                        DockFields(title: L("Dock with other displays"), size: $draft.otherSize, magnification: $draft.otherMagnification)
+                        Text(L("Dock settings are unchanged by default. Custom settings may require Automation permission."))
                             .font(.caption).foregroundStyle(.secondary)
-                        Button("查看日志") { NSWorkspace.shared.open(model.logsURL) }
+                        Button(L("Show Logs")) { NSWorkspace.shared.open(model.logsURL) }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 12)
@@ -226,8 +226,8 @@ struct SettingsView: View {
             HStack {
                 if model.busy { ProgressView().controlSize(.small) }
                 Spacer()
-                Button("取消") { NSApp.keyWindow?.close() }.keyboardShortcut(.cancelAction)
-                Button("应用") { Task { await model.save(draft) } }
+                Button(L("Cancel")) { NSApp.keyWindow?.close() }.keyboardShortcut(.cancelAction)
+                Button(L("Apply")) { Task { await model.save(draft) } }
                     .keyboardShortcut(.defaultAction).disabled(model.config.isEmpty)
             }.padding(16).disabled(model.busy)
         }
@@ -247,37 +247,37 @@ struct DockFields: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title).font(.subheadline.weight(.semibold))
-            Toggle("自定义图标大小", isOn: Binding(
+            Toggle(L("Custom icon size"), isOn: Binding(
                 get: { !size.isEmpty }, set: { size = $0 ? "48" : "" }
             )).toggleStyle(.switch)
             if !size.isEmpty {
                 HStack {
-                    Text("图标大小")
+                    Text(L("Icon size"))
                     Spacer()
                     TextField("16–128", text: $size).labelsHidden()
                         .textFieldStyle(.roundedBorder).frame(width: 80)
-                        .accessibilityLabel("\(title)图标大小")
+                        .accessibilityLabel(LF("%@ icon size", title))
                 }
             }
             HStack {
-                Text("鼠标悬停放大")
+                Text(L("Magnify on hover"))
                 Spacer()
-                Picker("鼠标悬停放大", selection: Binding(
+                Picker(L("Magnify on hover"), selection: Binding(
                     get: { magnification.isEmpty ? "unchanged" : (magnification == "off" ? "off" : "on") },
                     set: { magnification = $0 == "unchanged" ? "" : ($0 == "off" ? "off" : "64") }
                 )) {
-                    Text("保持系统设置").tag("unchanged")
-                    Text("关闭").tag("off")
-                    Text("开启").tag("on")
+                    Text(L("Keep system settings")).tag("unchanged")
+                    Text(L("Off")).tag("off")
+                    Text(L("On")).tag("on")
                 }.labelsHidden().pickerStyle(.menu).frame(width: 145)
             }
             if !magnification.isEmpty && magnification != "off" {
                 HStack {
-                    Text("放大尺寸")
+                    Text(L("Magnified size"))
                     Spacer()
                     TextField("16–128", text: $magnification).labelsHidden()
                         .textFieldStyle(.roundedBorder).frame(width: 80)
-                        .accessibilityLabel("\(title)放大尺寸")
+                        .accessibilityLabel(LF("%@ magnification size", title))
                 }
             }
         }
@@ -291,29 +291,29 @@ struct PairingView: View {
     @State private var identifier = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("绑定 iPad").font(.title2.weight(.semibold))
-            Text("通过 USB 接入并解锁 iPad，按系统提示完成信任。\n首次配置建议准备实体显示器或远程访问。")
+            Text(L("Pair iPad")).font(.title2.weight(.semibold))
+            Text(L("Connect and unlock your iPad by USB and complete any trust prompts.\nUse a physical display or remote access for initial setup."))
                 .foregroundStyle(.secondary)
-            Picker("USB 设备", selection: $serial) {
-                Text("请选择").tag("")
+            Picker(L("USB device"), selection: $serial) {
+                Text(L("Choose a device")).tag("")
                 ForEach(model.usb) { Text("\($0.name) · \($0.id.suffix(6))").tag($0.id) }
             }.disabled(model.tested)
-            Picker("匹配的随航设备", selection: $identifier) {
-                Text("请选择").tag("")
+            Picker(L("Matching Sidecar device"), selection: $identifier) {
+                Text(L("Choose a device")).tag("")
                 ForEach(model.targets) { Text($0.name).tag($0.id) }
             }.disabled(model.tested)
             HStack {
-                Button("刷新设备") { Task { await model.discover(); selectDefaults() } }.disabled(model.tested)
+                Button(L("Refresh Devices")) { Task { await model.discover(); selectDefaults() } }.disabled(model.tested)
                 Spacer()
-                Button("测试连接") { Task { await model.testPairing(serial: serial, identifier: identifier) } }
+                Button(L("Test Connection")) { Task { await model.testPairing(serial: serial, identifier: identifier) } }
                     .disabled(serial.isEmpty || identifier.isEmpty || model.tested)
             }
-            if model.busy { ProgressView("正在处理，请稍候…").controlSize(.small) }
+            if model.busy { ProgressView(L("Working…")).controlSize(.small) }
             if !model.message.isEmpty { Text(model.message).font(.callout).textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
-            if model.tested { Text("请确认目标 iPad 已显示 Mac 桌面。保存时会短暂重建连接。") }
+            if model.tested { Text(L("Confirm the intended iPad shows the Mac desktop. Saving briefly reconnects Sidecar.")) }
             HStack {
                 Spacer()
-                Button("取消") {
+                Button(L("Cancel")) {
                     Task {
                         model.busy = true
                         do { try await model.discardTrial(); model.message = ""; close() }
@@ -321,7 +321,7 @@ struct PairingView: View {
                         model.busy = false
                     }
                 }
-                Button("确认画面并保存绑定") {
+                Button(L("Confirm Display and Save")) {
                     Task { await model.confirmPairing(); if model.trialDirectory == nil { close() } }
                 }.disabled(!model.tested).keyboardShortcut(.defaultAction)
             }
@@ -338,7 +338,11 @@ struct PairingView: View {
 @MainActor
 func runSelfTests() async {
     do {
-        let input: [String: Any] = ["version": 1, "usbSerial": "fixture", "sidecarIdentifier": "fixture", "name": "测试 iPad",
+        if let expected = ProcessInfo.processInfo.environment["AUTOSIDECAR_EXPECT_LANGUAGE"] {
+            precondition(L("Apply") == (expected == "zh-Hans" ? "应用" : "Apply"), "Bundle language selection failed")
+            precondition(LF("Operation failed (%d). Check the logs.", Int32(9)).contains("9"))
+        }
+        let input: [String: Any] = ["version": 1, "usbSerial": "fixture", "sidecarIdentifier": "fixture", "name": L("Test iPad"),
                                   "display": ["width": 2628, "height": 1970, "hiDPI": true, "refreshRate": 60],
                                   "dock": ["ipadOnly": ["magnification": false, "size": 32]]]
         var prefs = Preferences(input)

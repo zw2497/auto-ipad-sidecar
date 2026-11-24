@@ -7,7 +7,15 @@ connection, reconnects after Mac or screen wake, and runs automatically after lo
 - **Without a monitor:** use the iPad as your Mac's desktop, including on a Mac mini.
 - **Between setups:** automatically switch between extended and iPad-only use.
 
-## Install
+## macOS app
+
+The fork adds a minimal SwiftUI menu-bar app. See the fork's [Releases](https://github.com/zw2497/auto-ipad-sidecar/releases) for available builds. Drag the app from its DMG to Applications and open it; terminal setup is not required.
+
+The interface follows macOS's app language (English / Simplified Chinese, English fallback). Settings control pairing, login startup, display preferences, and optional Dock profiles. Quit stops the background service; closing Settings keeps it running.
+
+For local builds, use `./scripts/build-app.sh --dmg`. See [release preparation](docs/RELEASING.md) for Developer ID signing, notarization, and current validation limits.
+
+## CLI install
 
 You'll need [Sidecar-compatible devices](https://support.apple.com/en-us/102597),
 a USB data cable, and Apple's Command Line Tools (`xcode-select --install`).
