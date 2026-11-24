@@ -172,9 +172,9 @@ struct SettingsView: View {
                     HStack {
                         Text("桌面分辨率")
                         Spacer()
-                        TextField("宽", text: $draft.width).frame(width: 70)
+                        TextField("宽", text: $draft.width).labelsHidden().textFieldStyle(.roundedBorder).frame(width: 70).accessibilityLabel("桌面宽度")
                         Text("×").foregroundStyle(.secondary)
-                        TextField("高", text: $draft.height).frame(width: 70)
+                        TextField("高", text: $draft.height).labelsHidden().textFieldStyle(.roundedBorder).frame(width: 70).accessibilityLabel("桌面高度")
                     }
                     Toggle("HiDPI 高清显示", isOn: $draft.hiDPI)
                     Text("尺寸为渲染像素；HiDPI 下桌面逻辑尺寸减半。\n分辨率、HiDPI 和刷新率将在下次连接时生效。")
@@ -188,17 +188,29 @@ struct SettingsView: View {
                     }
                 }.disabled(model.config.isEmpty)
                 DisclosureGroup("高级设置", isExpanded: $advanced) {
-                    LabeledContent("虚拟屏幕刷新率（Hz）") { TextField("60", text: $draft.hz).frame(width: 70) }
-                    Text("支持填写 24–120；高于 60 为实验性，不保证随航实际帧率。")
-                        .font(.caption).foregroundStyle(.secondary)
-                    DockFields(title: "仅 iPad 的 Dock", size: $draft.ipadSize, magnification: $draft.ipadMagnification)
-                    DockFields(title: "有其他显示器的 Dock", size: $draft.otherSize, magnification: $draft.otherMagnification)
-                    Text("留空表示不接管；大小和放大尺寸为 16–128，放大填 off 表示关闭。可能需要自动化权限。")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Button("查看日志") {
-                        let url = model.logsURL
-                        NSWorkspace.shared.open(url)
+                    VStack(alignment: .leading, spacing: 18) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("虚拟屏幕刷新率")
+                                Spacer()
+                                TextField("60", text: $draft.hz)
+                                    .labelsHidden().textFieldStyle(.roundedBorder)
+                                    .frame(width: 72).accessibilityLabel("虚拟屏幕刷新率")
+                                Text("Hz").foregroundStyle(.secondary)
+                            }
+                            Text("24–120 Hz；高于 60 为实验性，不保证随航实际帧率。")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Divider()
+                        DockFields(title: "仅 iPad 的 Dock", size: $draft.ipadSize, magnification: $draft.ipadMagnification)
+                        Divider()
+                        DockFields(title: "有其他显示器的 Dock", size: $draft.otherSize, magnification: $draft.otherMagnification)
+                        Text("Dock 默认保持系统设置；启用自定义可能需要自动化权限。")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Button("查看日志") { NSWorkspace.shared.open(model.logsURL) }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 12)
                 }.disabled(model.config.isEmpty)
             }
             .formStyle(.grouped)
@@ -233,15 +245,42 @@ struct DockFields: View {
     @Binding var size: String
     @Binding var magnification: String
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.subheadline.weight(.medium))
-            HStack {
-                Text("大小")
-                TextField("不接管", text: $size)
-                Text("放大")
-                TextField("不接管", text: $magnification)
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).font(.subheadline.weight(.semibold))
+            Toggle("自定义图标大小", isOn: Binding(
+                get: { !size.isEmpty }, set: { size = $0 ? "48" : "" }
+            )).toggleStyle(.switch)
+            if !size.isEmpty {
+                HStack {
+                    Text("图标大小")
+                    Spacer()
+                    TextField("16–128", text: $size).labelsHidden()
+                        .textFieldStyle(.roundedBorder).frame(width: 80)
+                        .accessibilityLabel("\(title)图标大小")
+                }
             }
-        }.padding(.vertical, 6)
+            HStack {
+                Text("鼠标悬停放大")
+                Spacer()
+                Picker("鼠标悬停放大", selection: Binding(
+                    get: { magnification.isEmpty ? "unchanged" : (magnification == "off" ? "off" : "on") },
+                    set: { magnification = $0 == "unchanged" ? "" : ($0 == "off" ? "off" : "64") }
+                )) {
+                    Text("保持系统设置").tag("unchanged")
+                    Text("关闭").tag("off")
+                    Text("开启").tag("on")
+                }.labelsHidden().pickerStyle(.menu).frame(width: 145)
+            }
+            if !magnification.isEmpty && magnification != "off" {
+                HStack {
+                    Text("放大尺寸")
+                    Spacer()
+                    TextField("16–128", text: $magnification).labelsHidden()
+                        .textFieldStyle(.roundedBorder).frame(width: 80)
+                        .accessibilityLabel("\(title)放大尺寸")
+                }
+            }
+        }
     }
 }
 

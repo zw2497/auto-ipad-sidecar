@@ -59,7 +59,7 @@ struct Preferences {
         if let display = config["display"] as? [String: Any] {
             width = "\((display["width"] as? NSNumber)?.intValue ?? 1920)"
             height = "\((display["height"] as? NSNumber)?.intValue ?? 1080)"
-            hz = "\((display["refreshRate"] as? NSNumber)?.doubleValue ?? 60)"
+            hz = (display["refreshRate"] as? NSNumber)?.stringValue ?? "60"
             hiDPI = (display["hiDPI"] as? NSNumber)?.boolValue ?? true
         }
         layout = config["withOtherDisplays"] as? String ?? "extend"
