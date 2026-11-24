@@ -8,6 +8,12 @@ Hardware acceptance (not covered by fixtures):
 - Install the app in Applications; legacy LaunchAgent hands ownership to the app.
 - Existing pairing loads; USB plug and wake start Sidecar with no other display.
 - Menu reflects an owned live process, process failure, and actual login-item status.
+- Menu Connect invokes CLI `connect` with the saved configuration, including without
+  USB, and keeps an existing watcher (including after exhausted retries);
+  Disconnect ends Sidecar while retaining the same watcher. Manual Connect does not
+  start a stopped watcher. Start/Stop Service control the watcher separately; stopping
+  does not invoke CLI disconnect, but releases its headless helper. Check both a
+  physical display and iPad-only use, including subsequent USB/wake triggers.
 - Enable/disable login startup, approve in System Settings if requested, and verify next login.
 - Pair a device, confirm the intended screen, and check persistence on relaunch.
 - Cancel or fail replacement pairing; original binding and service recover.

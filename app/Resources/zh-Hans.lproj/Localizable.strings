@@ -94,3 +94,13 @@
 "With other displays" = "有其他显示器时";
 "Working…" = "正在处理，请稍候…";
 "iPad paired. Connect it by USB to start Sidecar automatically." = "iPad 已绑定。以后插线即可自动连接。";
+"Connect iPad" = "连接 iPad";
+"Disconnect" = "断开";
+"Checking connection…" = "正在检查连接…";
+"Connection status unavailable" = "无法获取连接状态";
+"Could not connect iPad" = "无法连接 iPad";
+"Could not disconnect iPad" = "无法断开 iPad";
+"OK" = "好";
+"Stop Service" = "停止服务";
+"Could not start service" = "无法启动服务";
+"Could not stop service" = "无法停止服务";

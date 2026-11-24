@@ -121,6 +121,7 @@ final class ServiceModel: ObservableObject {
     var legacyPlist: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/LaunchAgents/local.auto-sidecar.plist") }
     @Published var serviceText = L("Auto-connect service is not running")
     @Published var running = false
+    @Published var connectionActive: Bool?
     @Published var loginText = L("Checking login startup…")
     @Published var loginEnabled = false
     @Published var needsLoginApproval = false
@@ -148,6 +149,7 @@ final class ServiceModel: ObservableObject {
             config = ["version": 1, "name": L("My iPad"), "usbSerial": "preview", "sidecarIdentifier": "preview",
                       "display": ["width": 2628, "height": 1970, "refreshRate": 60, "hiDPI": true], "withOtherDisplays": "extend"]
             running = true; serviceText = L("Auto-connect service is running")
+            connectionActive = false
             loginEnabled = true; loginText = L("Launch at login is enabled")
             if CommandLine.arguments.contains("--preview-message") { message = L("Settings saved. Resolution, HiDPI, and refresh rate apply on the next connection.") }
         } else { load(); refreshLogin() }
@@ -385,8 +387,52 @@ final class ServiceModel: ObservableObject {
     }
 
     func retry() async {
-        busy = true; defer { busy = false }
+        guard !busy, trialDirectory == nil else { return }
+        busy = true; message = ""; defer { busy = false }
         do { try await start(configURL) } catch { message = error.localizedDescription }
+    }
+
+    func stopService() async {
+        guard !busy, trialDirectory == nil else { return }
+        guard !previewMode else { message = L("Preview mode: no settings were saved or changed."); return }
+        busy = true; message = ""; defer { busy = false }
+        do { try await stop(disconnect: false) }
+        catch { message = error.localizedDescription }
+    }
+
+    func refreshConnection() async {
+        guard !previewMode else { return }
+        do {
+            let result = try await command(core, ["session-snapshot", "--config", configURL.path], timeout: 8)
+            guard result.code == 0, let data = result.output.data(using: .utf8),
+                  let snapshot = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let active = snapshot["active"] as? Bool else {
+                connectionActive = nil; return
+            }
+            connectionActive = active
+        } catch { connectionActive = nil }
+    }
+
+    func connect() async {
+        guard !busy, !config.isEmpty, trialDirectory == nil else { return }
+        guard !previewMode else { message = L("Preview mode: no settings were saved or changed."); return }
+        busy = true; message = ""; defer { busy = false }
+        do {
+            // Match the CLI's manual connection semantics, including wireless
+            // Sidecar. USB presence only gates automatic watch recovery.
+            _ = try await checked(["connect", "--config", configURL.path])
+            connectionActive = true
+        } catch { message = error.localizedDescription }
+    }
+
+    func disconnect() async {
+        guard !busy, !config.isEmpty, trialDirectory == nil else { return }
+        guard !previewMode else { message = L("Preview mode: no settings were saved or changed."); return }
+        busy = true; message = ""; defer { busy = false }
+        do {
+            _ = try await checked(["disconnect", "--config", configURL.path])
+            connectionActive = false
+        } catch { message = error.localizedDescription }
     }
 
     func quit() async {

@@ -52,7 +52,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             item.isEnabled = !Self.model.busy
             menu.addItem(item)
         }
-        if !Self.model.running && !Self.model.config.isEmpty { action(L("Start Service"), #selector(startService)) }
+        if !Self.model.config.isEmpty {
+            action(Self.model.running ? L("Stop Service") : L("Start Service"),
+                   Self.model.running ? #selector(stopService) : #selector(startService))
+            if Self.model.trialDirectory != nil { menu.items.last?.isEnabled = false }
+        }
+        if !Self.model.config.isEmpty {
+            menu.addItem(.separator())
+            let item = NSMenuItem(title: L("Checking connection…"), action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            item.target = self
+            menu.addItem(item)
+            // Refresh on each opening: the service may run without a Sidecar
+            // session, and a session can also be ended outside this app.
+            Task {
+                await Self.model.refreshConnection()
+                switch Self.model.connectionActive {
+                case true?: item.title = L("Disconnect"); item.action = #selector(disconnectIPad)
+                case false?: item.title = L("Connect iPad"); item.action = #selector(connectIPad)
+                case nil: item.title = L("Connection status unavailable"); item.action = nil
+                }
+                item.isEnabled = item.action != nil && !Self.model.busy && Self.model.trialDirectory == nil
+            }
+        }
         if !Self.model.loginEnabled {
             action(Self.model.needsLoginApproval ? L("Approve Login Startup…") : L("Enable Launch at Login"), #selector(enableLogin))
         }
@@ -62,7 +84,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         action(L("Quit AutoSidecar"), #selector(quitApp), key: "q")
     }
 
-    @objc private func startService() { Task { await Self.model.retry() } }
+    @objc private func startService() {
+        Task { await Self.model.retry(); showConnectionError(L("Could not start service")) }
+    }
+    @objc private func stopService() {
+        Task { await Self.model.stopService(); showConnectionError(L("Could not stop service")) }
+    }
+    @objc private func connectIPad() {
+        Task { await Self.model.connect(); showConnectionError(L("Could not connect iPad")) }
+    }
+    @objc private func disconnectIPad() {
+        Task { await Self.model.disconnect(); showConnectionError(L("Could not disconnect iPad")) }
+    }
+    private func showConnectionError(_ title: String) {
+        guard !Self.model.message.isEmpty else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = title
+        alert.informativeText = Self.model.message
+        alert.addButton(withTitle: L("OK"))
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
     @objc private func enableLogin() {
         if Self.model.needsLoginApproval { SMAppService.openSystemSettingsLoginItems() }
         else { Task { await Self.model.setLogin(true) } }
@@ -360,6 +403,29 @@ func runSelfTests() async {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("AutoSidecar-gui-tests-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let model = AppDelegate.model
+        let delegate = AppDelegate()
+        let menu = NSMenu()
+        delegate.menuNeedsUpdate(menu)
+        try await Task.sleep(nanoseconds: 10_000_000)
+        precondition(menu.items.contains { $0.title == L("Connect iPad") && $0.isEnabled })
+        precondition(!menu.items.contains { $0.title == L("Disconnect") })
+        precondition(menu.items.contains { $0.title == L("Stop Service") && $0.isEnabled })
+        // Service state does not determine Sidecar state.
+        model.connectionActive = true; model.running = false
+        delegate.menuNeedsUpdate(menu)
+        try await Task.sleep(nanoseconds: 10_000_000)
+        precondition(menu.items.contains { $0.title == L("Disconnect") && $0.isEnabled })
+        precondition(!menu.items.contains { $0.title == L("Connect iPad") })
+        precondition(menu.items.contains { $0.title == L("Start Service") && $0.isEnabled })
+        model.busy = true
+        delegate.menuNeedsUpdate(menu)
+        try await Task.sleep(nanoseconds: 10_000_000)
+        precondition(menu.items.contains { $0.title == L("Disconnect") && !$0.isEnabled })
+        model.busy = false
+        model.connectionActive = nil
+        delegate.menuNeedsUpdate(menu)
+        try await Task.sleep(nanoseconds: 10_000_000)
+        precondition(menu.items.contains { $0.title == L("Connection status unavailable") && !$0.isEnabled })
         let file = root.appendingPathComponent("config.plist")
         try await model.writeValidated(output, to: file)
         let original = try Data(contentsOf: file)
@@ -375,6 +441,8 @@ func runSelfTests() async {
         case "$1" in
           config) exit 0;;
           watch) exec /bin/sleep 100;;
+          connect) print -r -- "$@" > "${0:h}/connect-observed";;
+          usb) print forbidden > "${0:h}/usb-observed"; exit 1;;
           session-snapshot) print '{"active":true,"otherCount":0}';;
           disconnect) print disconnected > "${0:h}/disconnect-observed";;
           *) exit 1;;
@@ -383,21 +451,51 @@ func runSelfTests() async {
         try script.write(to: fake, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fake.path)
         let service = ServiceModel(testBase: root.appendingPathComponent("service"), executable: fake, preview: false)
+        service.config = output
         try await service.writeValidated(output, to: service.configURL)
+        await service.refreshConnection()
+        precondition(service.connectionActive == true && !service.running, "Live session mistaken for service state")
         try await service.start(service.configURL)
         precondition(service.running && service.watcher?.isRunning == true)
         let pid = service.watcher!.processIdentifier
         try await service.start(service.configURL)
         precondition(service.watcher!.processIdentifier == pid, "Duplicate watcher started")
+        await service.connect()
+        precondition(service.message.isEmpty && !service.busy)
+        let invocation = try String(contentsOf: root.appendingPathComponent("connect-observed"), encoding: .utf8)
+        precondition(invocation.trimmingCharacters(in: .whitespacesAndNewlines) == "connect --config \(service.configURL.path)", "GUI did not invoke CLI connect with the saved configuration")
+        precondition(!FileManager.default.fileExists(atPath: root.appendingPathComponent("usb-observed").path), "Manual connect incorrectly checked USB")
+        precondition(service.watcher!.processIdentifier == pid, "Manual connect replaced the watcher")
+        await service.disconnect()
+        precondition(service.message.isEmpty && !service.busy)
+        precondition(service.running && service.watcher?.processIdentifier == pid && service.watcher?.isRunning == true,
+                     "Disconnect stopped the auto-connect service")
+        let disconnectMarker = root.appendingPathComponent("disconnect-observed")
+        precondition(FileManager.default.fileExists(atPath: disconnectMarker.path))
+        try FileManager.default.removeItem(at: disconnectMarker)
+        await service.stopService()
+        precondition(!service.running && service.watcher == nil && service.message.isEmpty)
+        precondition(!FileManager.default.fileExists(atPath: disconnectMarker.path), "Stopping service invoked disconnect")
+        await service.connect()
+        precondition(!service.running && service.message.isEmpty, "Manual connect started the auto-connect service")
+        await service.retry()
+        precondition(service.running && service.message.isEmpty, "Start Service did not start the watcher")
         try await service.stop()
-        precondition(!service.running && service.watcher == nil)
-        precondition(FileManager.default.fileExists(atPath: root.appendingPathComponent("disconnect-observed").path))
+        precondition(FileManager.default.fileExists(atPath: disconnectMarker.path), "Quit cleanup no longer disconnects")
+        let absentScript = "#!/bin/zsh\nexit 1\n"
+        try absentScript.write(to: fake, atomically: true, encoding: .utf8)
+        await service.refreshConnection()
+        precondition(service.connectionActive == nil, "Failed probe retained stale state")
+        await service.connect()
+        precondition(!service.message.isEmpty && !service.busy && !service.running, "CLI failure incorrectly started the service")
+        await service.disconnect()
+        precondition(!service.message.isEmpty && !service.busy, "Disconnect failure was hidden")
         let failureScript = "#!/bin/zsh\n[[ $1 == watch ]] && exit 9\nexit 0\n"
         try failureScript.write(to: fake, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fake.path)
         do { try await service.start(service.configURL); fatalError("Failed watcher reported as running") } catch {}
         precondition(!service.running)
-        print("GUI self-tests passed: preferences, Dock tri-state, core validation, atomic preservation, start/stop, duplicate prevention, disconnect, startup failure")
+        print("GUI self-tests passed: preferences, validation, menu actions and busy state, CLI connect without USB, independent disconnect/stop/start, quit cleanup, command failure, error recovery, duplicate prevention, startup failure")
         exit(0)
     } catch { fputs("GUI self-test failed: \(error)\n", stderr); exit(1) }
 }

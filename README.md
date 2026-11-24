@@ -136,6 +136,12 @@ Build the menu-bar app and drag-to-install disk image (macOS 13+, Xcode Swift to
 
 Open `dist/AutoSidecar.dmg`, drag **AutoSidecar** into **Applications**, then open it.
 The menu shows the actual owned watcher process and the system login-item status.
+The menu shows **Disconnect** when the iPad is connected, or **Connect iPad** otherwise.
+Use **Connect iPad** to run the CLI manual connection for the paired iPad (USB or wireless), or retry a connection. **Disconnect**
+only ends the current session. Neither manual action changes the auto-connect service.
+Use **Start Service** / **Stop Service** separately to control the USB/wake watcher.
+Stopping the service releases its headless display, which can interrupt an iPad-only desktop.
+Your pairing and login startup preference are retained.
 Settings provide device enrollment, backing-pixel dimensions, HiDPI, display layout,
 and optional Dock profiles and refresh rate. Refresh rates above 60 Hz are experimental;
 a configured virtual-display rate does not prove Sidecar's delivered frame rate.

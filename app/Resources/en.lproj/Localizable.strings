@@ -94,3 +94,13 @@
 "With other displays" = "With other displays";
 "Working…" = "Working…";
 "iPad paired. Connect it by USB to start Sidecar automatically." = "iPad paired. Connect it by USB to start Sidecar automatically.";
+"Connect iPad" = "Connect iPad";
+"Disconnect" = "Disconnect";
+"Checking connection…" = "Checking connection…";
+"Connection status unavailable" = "Connection status unavailable";
+"Could not connect iPad" = "Could not connect iPad";
+"Could not disconnect iPad" = "Could not disconnect iPad";
+"OK" = "OK";
+"Stop Service" = "Stop Service";
+"Could not start service" = "Could not start service";
+"Could not stop service" = "Could not stop service";

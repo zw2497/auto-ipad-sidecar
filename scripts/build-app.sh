@@ -6,6 +6,9 @@ as_app="$PWD/dist/AutoSidecar.app"
 mkdir -p "$as_app/Contents/MacOS" "$as_app/Contents/Resources" bin/swift-cache
 cp app/Info.plist "$as_app/Contents/Info.plist"
 ditto app/Resources "$as_app/Contents/Resources"
+/usr/bin/swift -module-cache-path "$PWD/bin/swift-cache" scripts/build-icon.swift \
+  "$PWD/app/Artwork/logo-concept.png" "$PWD/bin/AutoSidecar.iconset"
+/usr/bin/iconutil -c icns "$PWD/bin/AutoSidecar.iconset" -o "$as_app/Contents/Resources/AutoSidecar.icns"
 cp bin/auto-sidecar "$as_app/Contents/Resources/auto-sidecar"
 /usr/bin/swiftc -swift-version 5 -parse-as-library -O -target "$(uname -m)-apple-macosx13.0" \
   -module-cache-path "$PWD/bin/swift-cache" -framework SwiftUI -framework AppKit -framework ServiceManagement \
