@@ -20,9 +20,13 @@ Download the DMG, drag AutoSidecar to Applications, and open it. Choose your iPa
 - A virtual display rate above 60 Hz is experimental and does not establish Sidecar's delivered frame rate.
 - Automated tests cover config/lifecycle fixtures. Physical-device acceptance is still pending; this is a prerelease.
 
+### Signing and validation
+
+The DMG and application are signed with Developer ID Application and notarized by Apple. The notarization log reports no issues. The DMG includes a stapled ticket and passes Gatekeeper assessment. SHA256SUMS covers the final stapled DMG.
+
 ### Draft readiness
 
-Developer ID signing, notarization, final assets, and upstream licensing confirmation are pending. Do not publish this draft until these items are resolved.
+Physical-device acceptance and upstream licensing confirmation remain pending. This release is a draft; do not publish until these are resolved.
 
 ---
 

@@ -40,6 +40,9 @@ xcrun notarytool store-credentials AutoSidecar
 NOTARY_PROFILE=AutoSidecar ./scripts/notarize.sh
 ```
 
+To resume an interrupted wait without uploading again, use
+`NOTARY_PROFILE=AutoSidecar ./scripts/notarize.sh --resume SUBMISSION_ID`.
+
 After successful notarization, stapling, and Gatekeeper assessment, the script
 creates a versioned DMG and SHA256SUMS in `dist/release/`. Upload only those final
 assets. Stapling changes the DMG, so checksums must be generated afterward.

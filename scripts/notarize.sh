@@ -17,7 +17,13 @@ for as_item in "$as_app/Contents/Resources/auto-sidecar" "$as_app" "$as_dmg"; do
   }
 done
 /usr/bin/codesign --verify --deep --strict "$as_app"
-xcrun notarytool submit "$as_dmg" --keychain-profile "$NOTARY_PROFILE" --wait
+if [[ ${1:-} == --resume && -n ${2:-} && $# == 2 ]]; then
+  xcrun notarytool wait "$2" --keychain-profile "$NOTARY_PROFILE" --timeout 30m
+elif (( $# == 0 )); then
+  xcrun notarytool submit "$as_dmg" --keychain-profile "$NOTARY_PROFILE" --wait
+else
+  print -u2 'Usage: notarize.sh [--resume SUBMISSION_ID]'; exit 1
+fi
 # Stapling fails if notarization was rejected; no rejected artifact reaches the release folder.
 xcrun stapler staple "$as_dmg"
 xcrun stapler validate "$as_dmg"
