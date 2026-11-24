@@ -143,6 +143,7 @@ final class ServiceModel: ObservableObject {
                       "display": ["width": 2628, "height": 1970, "refreshRate": 60, "hiDPI": true], "withOtherDisplays": "extend"]
             running = true; serviceText = "自动连接服务运行中"
             loginEnabled = true; loginText = "登录后自动启动已开启"
+            if CommandLine.arguments.contains("--preview-message") { message = "设置已保存。分辨率、HiDPI 和刷新率将在下次连接时生效。" }
         } else { load(); refreshLogin() }
     }
 

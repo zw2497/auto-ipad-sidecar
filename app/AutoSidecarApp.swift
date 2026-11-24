@@ -2,43 +2,74 @@ import AppKit
 import SwiftUI
 import ServiceManagement
 import Darwin
+import Combine
 
 @main
 struct AutoSidecarApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
-    @StateObject private var model = AppDelegate.model
-
     var body: some Scene {
-        MenuBarExtra {
-            Text("AutoSidecar")
-            Text(model.serviceText)
-            Text(model.loginText).onAppear { model.refreshLogin() }
-            if !model.running && !model.config.isEmpty {
-                Button("启动服务") { Task { await model.retry() } }.disabled(model.busy)
-            }
-            if !model.loginEnabled {
-                Button(model.needsLoginApproval ? "批准登录启动…" : "开启登录启动") {
-                    if model.needsLoginApproval { SMAppService.openSystemSettingsLoginItems() }
-                    else { Task { await model.setLogin(true) } }
-                }.disabled(model.busy)
-            }
-            Divider()
-            Button("设置…") { delegate.showSettings() }.keyboardShortcut(",")
-            Divider()
-            Button("退出 AutoSidecar") { NSApp.terminate(nil) }.keyboardShortcut("q")
-                .disabled(model.busy)
-        } label: {
-            Image(systemName: model.running ? "ipad.landscape" : "ipad.landscape.badge.exclamationmark")
-                .accessibilityLabel("AutoSidecar，\(model.serviceText)")
-        }
+        Settings { SettingsView(model: AppDelegate.model) }
     }
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
     static let model = ServiceModel()
     private var window: NSWindow?
     private var lockFD: Int32 = -1
+    private var statusItem: NSStatusItem?
+    private var statusSubscription: AnyCancellable?
+    private let statusMenu = NSMenu()
+
+    private func installMenuBar() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem = item
+        statusMenu.autoenablesItems = false
+        statusMenu.delegate = self
+        item.menu = statusMenu
+        statusSubscription = Self.model.$running.sink { [weak self] running in
+            let image = NSImage(systemSymbolName: running ? "ipad.landscape" : "exclamationmark.circle", accessibilityDescription: "AutoSidecar")
+            image?.isTemplate = true
+            self?.statusItem?.button?.image = image
+            self?.statusItem?.button?.toolTip = "AutoSidecar — \(running ? "服务运行中" : "服务未运行")"
+        }
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        Self.model.refreshLogin()
+        menu.removeAllItems()
+        func info(_ text: String, color: NSColor) {
+            let item = NSMenuItem(title: text, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            item.attributedTitle = NSAttributedString(string: text, attributes: [.foregroundColor: color])
+            menu.addItem(item)
+        }
+        info(Self.model.serviceText, color: Self.model.running ? .systemGreen : .systemOrange)
+        info(Self.model.loginText, color: Self.model.needsLoginApproval ? .systemOrange : .secondaryLabelColor)
+        func action(_ title: String, _ selector: Selector, key: String = "") {
+            let item = NSMenuItem(title: title, action: selector, keyEquivalent: key)
+            item.target = self
+            item.isEnabled = !Self.model.busy
+            menu.addItem(item)
+        }
+        if !Self.model.running && !Self.model.config.isEmpty { action("启动服务", #selector(startService)) }
+        if !Self.model.loginEnabled {
+            action(Self.model.needsLoginApproval ? "批准登录启动…" : "开启登录启动", #selector(enableLogin))
+        }
+        menu.addItem(.separator())
+        action("设置…", #selector(openSettings), key: ",")
+        menu.addItem(.separator())
+        action("退出 AutoSidecar", #selector(quitApp), key: "q")
+    }
+
+    @objc private func startService() { Task { await Self.model.retry() } }
+    @objc private func enableLogin() {
+        if Self.model.needsLoginApproval { SMAppService.openSystemSettingsLoginItems() }
+        else { Task { await Self.model.setLogin(true) } }
+    }
+    @objc private func openSettings() { showSettings() }
+    @objc private func quitApp() { NSApp.terminate(nil) }
+
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -57,6 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.renderPreview() }
             return
         }
+        installMenuBar()
         Task {
             await Self.model.bootstrap()
             if Self.model.config.isEmpty || !Self.model.message.isEmpty || ServiceModel.preview { showSettings() }
@@ -171,9 +203,12 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
             .disabled(model.busy)
-            if !model.message.isEmpty {
-                ScrollView { Text(model.message).font(.callout).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(12) }
-                    .frame(maxHeight: 95).background(.quaternary.opacity(0.3))
+            if !pairing && !model.message.isEmpty {
+                Text(model.message)
+                    .font(.callout).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20).padding(.vertical, 12)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Divider()
             HStack {
@@ -235,14 +270,14 @@ struct PairingView: View {
                     .disabled(serial.isEmpty || identifier.isEmpty || model.tested)
             }
             if model.busy { ProgressView("正在处理，请稍候…").controlSize(.small) }
-            if !model.message.isEmpty { ScrollView { Text(model.message).font(.callout).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 100) }
+            if !model.message.isEmpty { Text(model.message).font(.callout).textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
             if model.tested { Text("请确认目标 iPad 已显示 Mac 桌面。保存时会短暂重建连接。") }
             HStack {
                 Spacer()
                 Button("取消") {
                     Task {
                         model.busy = true
-                        do { try await model.discardTrial(); close() }
+                        do { try await model.discardTrial(); model.message = ""; close() }
                         catch { model.message = error.localizedDescription }
                         model.busy = false
                     }
